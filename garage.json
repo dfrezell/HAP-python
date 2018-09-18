@@ -1,0 +1,78 @@
+{
+    "log_level": "INFO",
+    "version": 1,
+
+    "gpio": {
+        "mode": "board"
+    },
+
+    "driver": {
+        "address": null,
+        "port": 51826,
+        "pincode": null,
+        "persist_file": "~/.hapi-garage/garage.state"
+    },
+
+    "doors": [
+        {
+            "name": "MyGarageDoor1",
+            "open_delay": 15,
+            "close_delay": 15,
+            "info": {
+                "manufacturer": "Genie",
+                "model": "SD2500",
+                "serial_number": "12345-67",
+                "firmware_revision": "1.0"
+            },
+            "sensor": {
+                "name": "SM-226L-3Q Seco-Larm",
+                "gpio": {
+                    "pin": 32,
+                    "pull_up_down": "pullup"
+                },
+                "debounce": {
+                    "reads": 7,
+                    "interval": 0.017,
+                    "open_threshold": 4,
+                    "close_threshold": 7
+                }
+            },
+            "relay": {
+                "gpio": {
+                    "pin": 31,
+                    "active": "low"
+                }
+            }
+        },
+        {
+            "name": "MyGarageDoor2",
+            "open_delay": 15,
+            "close_delay": 15,
+            "info": {
+                "manufacturer": "Genie",
+                "model": "SD2500",
+                "serial_number": "12345-67",
+                "firmware_revision": "1.0"
+            },
+            "sensor": {
+                "name": "SM-226L-3Q Seco-Larm",
+                "gpio": {
+                    "pin": 36,
+                    "pull_up_down": "pullup"
+                },
+                "debounce": {
+                    "reads": 7,
+                    "interval": 0.017,
+                    "open_threshold": 4,
+                    "close_threshold": 7
+                }
+            },
+            "relay": {
+                "gpio": {
+                    "pin": 35,
+                    "active": "low"
+                }
+            }
+        }
+    ]
+}
