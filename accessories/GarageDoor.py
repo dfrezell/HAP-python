@@ -53,15 +53,17 @@ class GarageDoorSensor(object):
 
         if states.count(GarageDoorSensor.SENSOR_STATE_OPEN) >= self.debounce["open_threshold"]:
             # if we read all zeroes, then we are most definitely closed
+            logger.debug("sensor open threshold met")
             self.state = GarageDoorSensor.SENSOR_STATE_OPEN
         elif states.count(GarageDoorSensor.SENSOR_STATE_CLOSED) >= self.debounce["close_threshold"]:
             # three or more reads with a 1, assume door is closed
+            logger.debug("sensor closed threshold met")
             self.state = GarageDoorSensor.SENSOR_STATE_CLOSED
         else:
             # not quite enough info to declare state, keep state unchanged
-            pass
+            logger.debug("threshold not met")
 
-        logger.info("sensor read: %s", states)
+        logger.debug("sensor read: %s", states)
         return GARAGE_DOOR_CLOSED if (self.state == GarageDoorSensor.SENSOR_STATE_CLOSED) else GARAGE_DOOR_OPEN
 
 class GarageDoorButton(object):
@@ -75,7 +77,8 @@ class GarageDoorButton(object):
         elif gpio["active"] == "high":
             self.gpio_active = GPIO.HIGH
             self.gpio_inactive = GPIO.LOW
-        GPIO.setup(self.gpio_pin, GPIO.OUT, initial=self.gpio_active)
+        # initialize the relay in it's inactive(off) state
+        GPIO.setup(self.gpio_pin, GPIO.OUT, initial=self.gpio_inactive)
 
     def push(self):
         '''push'''
@@ -109,11 +112,12 @@ class GarageDoor(Accessory):
         self.sensor = GarageDoorSensor(**kwargs["sensor"])
         self.button = GarageDoorButton(**kwargs["relay"])
 
-        self.current_door_state = self.sensor.read()
-        self.target_door_update = False
         self.moving = 0
+        self.target_door_update = False
+        self.current_door_state = self.sensor.read()
 
         self.char_current_door_state.value = self.current_door_state
+        self.char_target_door_state.value = self.current_door_state
 
     @classmethod
     def setup(cls, mode):
@@ -142,16 +146,19 @@ class GarageDoor(Accessory):
 
     def set_target_state(self, _value):
         '''set_target_state'''
+        logger.info("set target state = %d", _value)
         self.target_door_update = True
 
     def get_door_state(self):
         '''get_door_state'''
+        logger.info("get door state = %d", self.current_door_state)
         return self.current_door_state
 
     def get_obstruction(self):
         '''get_obstruction'''
         # There is no good way to detect obstructions, so we assume it is
         # alway false
+        logger.info("get obstruction")
         return False
 
     def _probe_door_state(self):
@@ -172,37 +179,45 @@ class GarageDoor(Accessory):
             # only set our door state after the moving time is expired
             self.current_door_state = state
 
-        return self.current_door_state
-
     def _toggle_door_state(self):
         # we are in our target door state, nothing to do
         if self.char_target_door_state.value == self.current_door_state:
+            logger.debug("target == current, skip toggle")
             self.target_door_update = False
             return
 
         if self.current_door_state not in (GARAGE_DOOR_CLOSING, GARAGE_DOOR_OPENING):
-            self.button.push()
-            self.moving = GARAGE_MOVING_DELAY
-            self.target_door_update = False
             if self.current_door_state == GARAGE_DOOR_CLOSED:
                 self.current_door_state = GARAGE_DOOR_OPENING
             else:
                 self.current_door_state = GARAGE_DOOR_CLOSING
+            self.button.push()
+            self.moving = self.kwargs["open_delay"] if (self.current_door_state == GARAGE_DOOR_OPENING) else self.kwargs["close_delay"]
+            self.target_door_update = False
+            logger.debug("push button: delay = %d", self.moving)
         else:
             # we think the door is moving, don't do anything and wait for
             # the moving time to expire.  After the door has stopped moving
             # then we can check the target_door_state with current_door_state
             # and take appropriate action.
-            pass
+            logger.debug("door is moving, don't toggle")
 
     @Accessory.run_at_interval(1)
     def run(self):
         '''run'''
-        state = self._probe_door_state()
-
-        if self.char_current_door_state.value != state:
-            self.char_current_door_state.value = state
-            self.char_current_door_state.notify()
+        self._probe_door_state()
 
         if self.target_door_update:
             self._toggle_door_state()
+
+        # TODO(alf): I believe we may have to update the char_target_door_state
+        # as well.  This get's a bit trickier, because I think we only want to publish
+        # updates for the CLOSED and OPEN states, not the CLOSING, OPENING, or STOPPED states.
+        # 
+        # This is needed to account for the door being activated outside the HomeKit ecosystem
+        # (i.e. the physical garage door button was pushed).  So, our state would change and
+        # HomeKit thinks the target state is not met...I think...
+        if self.char_current_door_state.value != self.current_door_state:
+            logger.debug("notify door state: %d", self.current_door_state)
+            self.char_current_door_state.value = self.current_door_state
+            self.char_current_door_state.notify()
